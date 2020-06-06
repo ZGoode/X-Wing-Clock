@@ -1,5 +1,3 @@
-//SPEAKER IS CONNECTED TO PIN 11
-
 #include <DS3231.h>
 #include <Wire.h>
 #include <SPI.h>
@@ -22,40 +20,44 @@ void displayTime ();
 void fireCannon (long currentTime);
 
 const int switchDST = 2;
-const int switchNoise = 4;
+const int switchNoise = 7;
 
-const int engine1 = 3;
-const int engine2 = 5;
-const int engine3 = 6;
-const int engine4 = 9;
+const int engine1 = 5;
+const int engine2 = 6;
 
-const int cannon = 8;
+const int cannon = 4;
 
-int engineFade1 = 255;
-int engineFade2 = 255;
-int engineFade3 = 255;
-int engineFade4 = 255;
+int engineFade1;
+int engineFade2;
+
+int engineMin = 10;
+int engineMax = 255;
 
 int screenMode = 0;
 
 boolean fadeUp1 = false;
 boolean fadeUp2 = false;
-boolean fadeUp3 = false;
-boolean fadeUp4 = false;
 
-boolean Shot1 = false;
-boolean Shot2 = false;
-boolean Shot3 = false;
-boolean Shot4 = false;
+boolean cannonSafety1 = false;
+boolean cannonSafety2 = false;
+boolean cannonSafety3 = false;
+boolean cannonSafety4 = false;
+boolean cannonSafety5 = false;
+boolean cannonSafety6 = false;
 
 bool h12;
 bool PM;
+
+boolean firstTime = true;
 
 long fadeInterval = 50;
 long previousMillisFade = 0;
 
 long interval = 5000;
 long previousMillis = 0;
+
+long cannonSafety = 60000;
+long previousMillisCannonFire = 0;
 
 long previousMillisCannon = 0;
 long cannonDelay1 = 41;
@@ -93,13 +95,16 @@ void setup() {
 
   pinMode(engine1, OUTPUT);
   pinMode(engine2, OUTPUT);
-  pinMode(engine3, OUTPUT);
-  pinMode(engine4, OUTPUT);
   pinMode(cannon, OUTPUT);
+
+  engineFade1 = random(engineMin, engineMax);
+  engineFade2 = random(engineMin, engineMax);
+
+  digitalWrite(cannon, LOW);
 }
 
 void loop() {
-  if (digitalRead(switchDST) == HIGH) {  //MAKE DST DO SOMETHING
+  if (digitalRead(switchDST) == HIGH) {
     DST = true;
   } else {
     DST = false;
@@ -111,12 +116,16 @@ void loop() {
     engineLights();
   }
 
-  if (currentMillis - previousMillis > interval) {
+  if ((currentMillis - previousMillis > interval) || firstTime) {
+    firstTime = false;
+
     previousMillis = currentMillis;
     display.clearDisplay();
 
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
+
+    display.drawBitmap((display.width()  - COLON_WIDTH) / 2, 0, Colon, COLON_WIDTH, COLON_HEIGHT, 1);
 
     if (screenMode == 0) {
       screenMode = 1;
@@ -124,35 +133,28 @@ void loop() {
       display.println(F("That's no Moon,"));
       display.setCursor(1, 49);
       display.println(F("It's a Space Station!"));
+      display.drawBitmap(0, 0, Jedi, JEDI_WIDTH, JEDI_HEIGHT, 1);
+      display.drawBitmap(96, 0, Jedi, JEDI_WIDTH, JEDI_HEIGHT, 1);
     } else {
       screenMode = 0;
       display.setCursor(25, 41);
       display.println(F("May the Force"));
       display.setCursor(30, 49);
       display.println(F("Be With You!"));
+      display.drawBitmap(0, 0, Rebel, REBEL_WIDTH, REBEL_HEIGHT, 1);
+      display.drawBitmap(96, 0, Rebel, REBEL_WIDTH, REBEL_HEIGHT, 1);
     }
+
+    displayTime();
     display.display();
   }
 
-  display.drawBitmap((display.width()  - COLON_WIDTH) / 2, 0, Colon, COLON_WIDTH, COLON_HEIGHT, 1);
+  if (((Clock.getMinute() == 0) || (Clock.getMinute() == 15) || (Clock.getMinute() == 30) || (Clock.getMinute() == 45) || laserTime) && currentMillis - previousMillisCannonFire > cannonSafety) {
 
-  if (screenMode == 0) {
-    display.drawBitmap(0, 0, Jedi, JEDI_WIDTH, JEDI_HEIGHT, 1);
-    display.drawBitmap(96, 0, Jedi, JEDI_WIDTH, JEDI_HEIGHT, 1);
-  } else if (screenMode == 1) {
-    display.drawBitmap(0, 0, Rebel, REBEL_WIDTH, REBEL_HEIGHT, 1);
-    display.drawBitmap(96, 0, Rebel, REBEL_WIDTH, REBEL_HEIGHT, 1);
-  }
-
-  displayTime();
-
-  display.display();
-
-  if ((Clock.getMinute() == (0 || 15 || 30 || 45)) || laserTime) {
     fireCannon(currentMillis);
   }
 
-  if ((Clock.getMinute() != (0 || 15 || 30 || 45)) && (currentMillis - previousMillisEngine > engineDelay)) {
+  if (((Clock.getMinute() != 0) || (Clock.getMinute() != 15) || (Clock.getMinute() != 30) || (Clock.getMinute() != 45) || (Clock.getMinute() != 59) || (Clock.getMinute() != 14) || (Clock.getMinute() != 29) || (Clock.getMinute() != 44)) && (currentMillis - previousMillisEngine > engineDelay) && (digitalRead(switchNoise))) {
     previousMillisEngine = currentMillis;
     startPlayback(engine, NUM_ELEMENTS_ENGINE);
 
@@ -177,13 +179,13 @@ void engineLights () {
   if (fadeUp1) {
     engineFade1 = engineFade1 + fadeAmount1;
 
-    if (engineFade1 >= 255) {
+    if (engineFade1 >= engineMax) {
       fadeUp1 = false;
     }
   } else if (!fadeUp1) {
     engineFade1 = engineFade1 - fadeAmount1;
 
-    if (engineFade1 >= 255) {
+    if (engineFade1 <= engineMin) {
       fadeUp1 = true;
     }
   }
@@ -191,54 +193,22 @@ void engineLights () {
   if (fadeUp2) {
     engineFade2 = engineFade2 + fadeAmount2;
 
-    if (engineFade2 >= 255) {
+    if (engineFade2 >= engineMax) {
       fadeUp2 = false;
     }
   } else if (!fadeUp2) {
     engineFade2 = engineFade2 - fadeAmount2;
 
-    if (engineFade2 >= 255) {
+    if (engineFade2 <= engineMin) {
       fadeUp2 = true;
     }
   }
 
-  if (fadeUp3) {
-    engineFade3 = engineFade3 + fadeAmount3;
-
-    if (engineFade3 >= 255) {
-      fadeUp3 = false;
-    }
-  } else if (!fadeUp3) {
-    engineFade3 = engineFade3 - fadeAmount3;
-
-    if (engineFade3 >= 255) {
-      fadeUp3 = true;
-    }
-  }
-
-  if (fadeUp4) {
-    engineFade4 = engineFade4 + fadeAmount4;
-
-    if (engineFade4 >= 255) {
-      fadeUp4 = false;
-    }
-  } else if (!fadeUp4) {
-    engineFade4 = engineFade4 - fadeAmount4;
-
-    if (engineFade4 >= 255) {
-      fadeUp4 = true;
-    }
-  }
-
-  engineFade1 = constrain(engineFade1, 0, 255);
-  engineFade2 = constrain(engineFade2, 0, 255);
-  engineFade3 = constrain(engineFade3, 0, 255);
-  engineFade4 = constrain(engineFade4, 0, 255);
+  engineFade1 = constrain(engineFade1, engineMin, engineMax);
+  engineFade2 = constrain(engineFade2, engineMin, engineMax);
 
   analogWrite(engine1, engineFade1);
   analogWrite(engine2, engineFade2);
-  analogWrite(engine3, engineFade3);
-  analogWrite(engine4, engineFade4);
 }
 
 void displayTime () {
@@ -327,41 +297,54 @@ void fireCannon (long currentTime) {
     laserTime = true;
     previousMillisCannon = currentTime;
 
+    cannonSafety1 = true;
+    cannonSafety2 = true;
+    cannonSafety3 = true;
+    cannonSafety4 = true;
+    cannonSafety5 = true;
+    cannonSafety6 = true;
+
     if (digitalRead(switchNoise)) {
       startPlayback(laser, NUM_ELEMENTS_LASER);
     }
   }
 
-  if (currentTime - previousMillisCannon > cannonDelay1) {
+  if (currentTime - previousMillisCannon > cannonDelay1 && cannonSafety1) {
     digitalWrite(cannon, HIGH);
+    cannonSafety1 = false;
   }
 
-  if (currentTime - previousMillisCannon > cannonDelay2) {
+  if (currentTime - previousMillisCannon > cannonDelay2 && cannonSafety2) {
     digitalWrite(cannon, LOW);
+    cannonSafety2 = false;
   }
 
-  if (currentTime - previousMillisCannon > cannonDelay3) {
+  if (currentTime - previousMillisCannon > cannonDelay3 && cannonSafety3) {
     digitalWrite(cannon, HIGH);
+    cannonSafety3 = false;
   }
 
-  if (currentTime - previousMillisCannon > cannonDelay4) {
+  if (currentTime - previousMillisCannon > cannonDelay4 && cannonSafety4) {
     digitalWrite(cannon, LOW);
+    cannonSafety4 = false;
   }
 
-  if (currentTime - previousMillisCannon > cannonDelay5) {
+  if (currentTime - previousMillisCannon > cannonDelay5 && cannonSafety5) {
     digitalWrite(cannon, HIGH);
+    cannonSafety5 = false;
   }
 
-  if (currentTime - previousMillisCannon > cannonDelay6) {
+  if (currentTime - previousMillisCannon > cannonDelay6 && cannonSafety6) {
     digitalWrite(cannon, LOW);
+    cannonSafety6 = false;
   }
 
   if (currentTime - previousMillisCannon > cannonAudioLength) {
     firstLaser = true;
     laserTime = false;
 
-    if (digitalRead(switchNoise)) {
-      stopPlayback();
-    }
+    previousMillisCannonFire = currentTime;
+
+    stopPlayback();
   }
 }
